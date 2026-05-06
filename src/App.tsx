@@ -442,23 +442,23 @@ export default function App() {
   useEffect(() => {
     if (!previewRef.current) return;
     const preview = previewRef.current;
-    const headingNodes = Array.from(preview.querySelectorAll<HTMLElement>("h1[id], h2[id], h3[id], h4[id]"));
-    if (headingNodes.length === 0) {
-      setActiveHeadingId(null);
-      return;
-    }
 
     let frame = 0;
     const updateActiveHeading = () => {
       frame = 0;
+      const nodes = Array.from(preview.querySelectorAll<HTMLElement>("h1[id], h2[id], h3[id], h4[id]"));
+      if (nodes.length === 0) {
+        setActiveHeadingId(null);
+        return;
+      }
       const previewTop = preview.getBoundingClientRect().top;
       const marker = 72;
-      let active = headingNodes[0];
+      let active = nodes[0];
 
-      for (const heading of headingNodes) {
-        const headingTop = heading.getBoundingClientRect().top - previewTop;
+      for (const node of nodes) {
+        const headingTop = node.getBoundingClientRect().top - previewTop;
         if (headingTop <= marker) {
-          active = heading;
+          active = node;
         } else {
           break;
         }
@@ -658,8 +658,12 @@ export default function App() {
   }, [reloadActiveFile]);
 
   const jumpToHeading = useCallback((id: string) => {
-    const target = previewRef.current?.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
-    target?.scrollIntoView({ block: "start", behavior: "smooth" });
+    const preview = previewRef.current;
+    const target = preview?.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
+    if (target && preview) {
+      const top = preview.scrollTop + target.getBoundingClientRect().top - preview.getBoundingClientRect().top - 22;
+      preview.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+    }
     setActiveHeadingId(id);
   }, []);
 
