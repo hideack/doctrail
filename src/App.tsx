@@ -379,6 +379,7 @@ export default function App() {
   const [darkMode, setDarkMode] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
   const previewRef = useRef<HTMLDivElement | null>(null);
   const outlineRef = useRef<HTMLElement | null>(null);
+  const fileTabsRef = useRef<HTMLElement | null>(null);
   const headingRenderIndex = useRef(0);
 
   const activeTab = useMemo(() => tabs.find((tab) => tab.id === activeTabId) ?? null, [activeTabId, tabs]);
@@ -691,7 +692,8 @@ export default function App() {
       ].join(" ")}
       onMouseMove={(event) => {
         if (toolbarMode !== "auto") return;
-        setToolbarVisible(event.clientY <= 72);
+        const overFileTabs = fileTabsRef.current?.contains(event.target as Node) ?? false;
+        setToolbarVisible(!overFileTabs && event.clientY <= 72);
       }}
     >
       {dragActive ? <div className="drop-overlay">Drop Markdown file to open</div> : null}
@@ -753,7 +755,7 @@ export default function App() {
 
       <main className={["workspace", tabs.length > 1 ? "with-file-tabs" : ""].join(" ")}>
         {tabs.length > 1 ? (
-          <aside className="file-tabs" aria-label="Open files">
+          <aside ref={fileTabsRef} className="file-tabs" aria-label="Open files">
             <div className="file-tabs-list">
               {tabs.map((tab) => (
                 <div key={tab.id} className={["file-tab-row", tab.id === activeTabId ? "active" : ""].join(" ")}>
