@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview, type DragDropEvent } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readTextFile } from "@tauri-apps/plugin-fs";
-import { FolderOpen, Pin, PinOff, RotateCw, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronDown, ChevronRight, FolderOpen, FolderTree, Pin, PinOff, RotateCw, ZoomIn, ZoomOut } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -37,6 +37,13 @@ type DocumentTab = {
 };
 
 type ToolbarMode = "always" | "auto";
+
+type FileNode = {
+  name: string;
+  path: string;
+  is_directory: boolean;
+  children: FileNode[];
+};
 
 const SAMPLE_MARKDOWN = `# DocTrail
 
@@ -360,6 +367,72 @@ function OutlineList({
   );
 }
 
+function FileTree({
+  nodes,
+  activeTabId,
+  expandedPaths,
+  level,
+  onToggleDir,
+  onOpenFile,
+}: {
+  nodes: FileNode[];
+  activeTabId: string | null;
+  expandedPaths: Set<string>;
+  level: number;
+  onToggleDir: (path: string) => void;
+  onOpenFile: (path: string) => void;
+}) {
+  return (
+    <ul className="file-tree-list">
+      {nodes.map((node) => {
+        const normalizedPath = normalizePath(node.path);
+        if (node.is_directory) {
+          const expanded = expandedPaths.has(normalizedPath);
+          return (
+            <li key={normalizedPath}>
+              <button
+                type="button"
+                className="tree-dir"
+                style={{ paddingLeft: `${level * 12 + 8}px` }}
+                onClick={() => onToggleDir(normalizedPath)}
+              >
+                <span className="tree-chevron">
+                  {expanded ? <ChevronDown size={11} strokeWidth={2.5} /> : <ChevronRight size={11} strokeWidth={2.5} />}
+                </span>
+                <span>{node.name}</span>
+              </button>
+              {expanded ? (
+                <FileTree
+                  nodes={node.children}
+                  activeTabId={activeTabId}
+                  expandedPaths={expandedPaths}
+                  level={level + 1}
+                  onToggleDir={onToggleDir}
+                  onOpenFile={onOpenFile}
+                />
+              ) : null}
+            </li>
+          );
+        }
+        const isActive = activeTabId === normalizedPath;
+        return (
+          <li key={normalizedPath}>
+            <button
+              type="button"
+              className={["tree-file", isActive ? "active" : ""].join(" ")}
+              style={{ paddingLeft: `${level * 12 + 20}px` }}
+              title={node.path}
+              onClick={() => onOpenFile(node.path)}
+            >
+              <span>{node.name.replace(/\.(md|markdown|mdown|mkd)$/i, "")}</span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export default function App() {
   const [tabs, setTabs] = useState<DocumentTab[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -377,6 +450,8 @@ export default function App() {
     return Number.isFinite(saved) && saved >= MIN_FONT_SCALE && saved <= MAX_FONT_SCALE ? saved : DEFAULT_FONT_SCALE;
   });
   const [darkMode, setDarkMode] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const [directoryRoot, setDirectoryRoot] = useState<FileNode[] | null>(null);
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const previewRef = useRef<HTMLDivElement | null>(null);
   const outlineRef = useRef<HTMLElement | null>(null);
   const fileTabsRef = useRef<HTMLElement | null>(null);
@@ -533,6 +608,29 @@ export default function App() {
     await loadFiles([path]);
   }, [loadFiles]);
 
+  const loadDirectory = useCallback(async (path: string) => {
+    try {
+      const nodes = await invoke<FileNode[]>("scan_directory", { path });
+      setDirectoryRoot(nodes);
+      setExpandedPaths(new Set());
+      setStatus(basename(path));
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
+
+  const toggleDir = useCallback((path: string) => {
+    setExpandedPaths((current) => {
+      const next = new Set(current);
+      if (next.has(path)) {
+        next.delete(path);
+      } else {
+        next.add(path);
+      }
+      return next;
+    });
+  }, []);
+
   const selectTab = useCallback(
     (id: string) => {
       const tab = tabs.find((tab) => tab.id === id);
@@ -568,9 +666,22 @@ export default function App() {
 
   const loadDroppedPath = useCallback(
     async (paths: string[]) => {
+      for (const path of paths) {
+        if (!isMarkdownPath(path)) {
+          try {
+            const nodes = await invoke<FileNode[]>("scan_directory", { path });
+            setDirectoryRoot(nodes);
+            setExpandedPaths(new Set());
+            setStatus(basename(path));
+            return;
+          } catch {
+            // not a directory, continue
+          }
+        }
+      }
       const markdownPaths = paths.filter(isMarkdownPath);
       if (markdownPaths.length === 0) {
-        setStatus("Drop a Markdown file (.md, .markdown, .mdown, .mkd)");
+        setStatus("Drop a Markdown file or folder");
         return;
       }
       await loadFiles(markdownPaths);
@@ -616,21 +727,26 @@ export default function App() {
     if (!("__TAURI_INTERNALS__" in window)) return;
 
     let unlisten: (() => void) | undefined;
-    const openMarkdownFiles = async (paths: string[]) => {
-      const markdownPaths = paths.filter(isMarkdownPath);
+
+    const openPaths = async (files: string[], directory?: string | null) => {
+      if (directory) {
+        await loadDirectory(directory);
+        return;
+      }
+      const markdownPaths = files.filter(isMarkdownPath);
       if (markdownPaths.length > 0) {
         await loadFiles(markdownPaths);
       }
     };
 
-    invoke<string[]>("take_pending_open_files")
-      .then(openMarkdownFiles)
+    invoke<{ files: string[]; directory: string | null }>("take_pending_open_paths")
+      .then(({ files, directory }) => openPaths(files, directory))
       .catch((error: unknown) => {
         setStatus(error instanceof Error ? error.message : String(error));
       });
 
     listen<string[]>("open-files", (event) => {
-      void openMarkdownFiles(event.payload);
+      void loadDroppedPath(event.payload);
     })
       .then((cleanup) => {
         unlisten = cleanup;
@@ -640,7 +756,7 @@ export default function App() {
       });
 
     return () => unlisten?.();
-  }, [loadFiles]);
+  }, [loadFiles, loadDirectory, loadDroppedPath]);
 
   const handleOpen = useCallback(async () => {
     const selected = await open({
@@ -653,6 +769,13 @@ export default function App() {
       await loadFiles(selected);
     }
   }, [loadFile, loadFiles]);
+
+  const handleOpenFolder = useCallback(async () => {
+    const selected = await open({ directory: true });
+    if (typeof selected === "string") {
+      await loadDirectory(selected);
+    }
+  }, [loadDirectory]);
 
   const handleReload = useCallback(async () => {
     await reloadActiveFile();
@@ -705,6 +828,9 @@ export default function App() {
         <button type="button" className="icon-button" title="Open Markdown files" aria-label="Open Markdown files" onClick={handleOpen}>
           <FolderOpen size={16} strokeWidth={2} />
         </button>
+        <button type="button" className="icon-button" title="Open folder" aria-label="Open folder" onClick={handleOpenFolder}>
+          <FolderTree size={16} strokeWidth={2} />
+        </button>
         <button type="button" className="icon-button" title="Reload active file" aria-label="Reload active file" onClick={handleReload} disabled={!filePath}>
           <RotateCw size={16} strokeWidth={2} />
         </button>
@@ -753,8 +879,21 @@ export default function App() {
         </div>
       </header>
 
-      <main className={["workspace", tabs.length > 1 ? "with-file-tabs" : ""].join(" ")}>
-        {tabs.length > 1 ? (
+      <main className={["workspace", directoryRoot ? "with-file-tree" : tabs.length > 1 ? "with-file-tabs" : ""].join(" ")}>
+        {directoryRoot ? (
+          <aside ref={fileTabsRef} className="file-tree" aria-label="Directory tree">
+            <div className="file-tree-scroll">
+              <FileTree
+                nodes={directoryRoot}
+                activeTabId={activeTabId}
+                expandedPaths={expandedPaths}
+                level={0}
+                onToggleDir={toggleDir}
+                onOpenFile={loadFile}
+              />
+            </div>
+          </aside>
+        ) : tabs.length > 1 ? (
           <aside ref={fileTabsRef} className="file-tabs" aria-label="Open files">
             <div className="file-tabs-list">
               {tabs.map((tab) => (
