@@ -781,6 +781,18 @@ export default function App() {
     await reloadActiveFile();
   }, [reloadActiveFile]);
 
+  useEffect(() => {
+    const handleReloadKey = (event: KeyboardEvent) => {
+      if (!event.metaKey && !event.ctrlKey) return;
+      if (event.key !== "r" && event.key !== "R") return;
+      event.preventDefault();
+      void reloadActiveFile();
+    };
+
+    window.addEventListener("keydown", handleReloadKey);
+    return () => window.removeEventListener("keydown", handleReloadKey);
+  }, [reloadActiveFile]);
+
   const jumpToHeading = useCallback((id: string) => {
     const preview = previewRef.current;
     const target = preview?.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
