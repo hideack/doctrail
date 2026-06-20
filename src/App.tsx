@@ -454,6 +454,7 @@ export default function App() {
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
   const previewRef = useRef<HTMLDivElement | null>(null);
   const outlineRef = useRef<HTMLElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const fileTabsRef = useRef<HTMLElement | null>(null);
   const headingRenderIndex = useRef(0);
 
@@ -793,6 +794,19 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleReloadKey);
   }, [reloadActiveFile]);
 
+  useEffect(() => {
+    const handleFindKey = (event: KeyboardEvent) => {
+      if (!event.metaKey && !event.ctrlKey) return;
+      if (event.key !== "f" && event.key !== "F") return;
+      event.preventDefault();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    };
+
+    window.addEventListener("keydown", handleFindKey);
+    return () => window.removeEventListener("keydown", handleFindKey);
+  }, []);
+
   const jumpToHeading = useCallback((id: string) => {
     const preview = previewRef.current;
     const target = preview?.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
@@ -924,6 +938,7 @@ export default function App() {
         <aside className="sidebar">
           <div className="search-panel">
             <input
+              ref={searchInputRef}
               type="search"
               placeholder="Search in document"
               value={query}
