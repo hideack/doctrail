@@ -986,7 +986,10 @@ export default function App() {
                 code({ className, children, ...props }) {
                   const language = /language-(\w+)/.exec(className ?? "")?.[1];
                   const code = String(children).replace(/\n$/, "");
-                  if (isMermaidCode(language, code)) {
+                  // インラインコード（例: `graph.js`）を Mermaid と誤判定しないよう、
+                  // 言語タグ付き or 複数行のフェンスドブロックのみ自動判定の対象にする。
+                  const isBlock = language !== undefined || code.includes("\n");
+                  if (isBlock && isMermaidCode(language, code)) {
                     return <MermaidBlock code={code} darkMode={darkMode} />;
                   }
                   return (
