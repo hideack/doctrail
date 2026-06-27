@@ -291,10 +291,53 @@ function stripSvgDimensions(svg: string): string {
   });
 }
 
+type ContextMenuPos = { x: number; y: number };
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function saveSvg(svgString: string) {
+  downloadBlob(new Blob([svgString], { type: "image/svg+xml;charset=utf-8" }), "diagram.svg");
+}
+
+function savePng(svgString: string) {
+  const viewBoxMatch = /viewBox="(?:[\d.]+\s+){2}([\d.]+)\s+([\d.]+)"/.exec(svgString);
+  const w = viewBoxMatch ? parseFloat(viewBoxMatch[1]) : 800;
+  const h = viewBoxMatch ? parseFloat(viewBoxMatch[2]) : 600;
+  const scale = 2;
+
+  const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = w * scale;
+    canvas.height = h * scale;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob((pngBlob) => {
+      if (pngBlob) downloadBlob(pngBlob, "diagram.png");
+    }, "image/png");
+    URL.revokeObjectURL(url);
+  };
+  img.src = url;
+}
+
 function MermaidBlock({ code, darkMode }: { code: string; darkMode: boolean }) {
   const [svg, setSvg] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [overlayOpen, setOverlayOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState<ContextMenuPos | null>(null);
+  const viewRef = useRef<HTMLDivElement>(null);
+  const overlayContentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -339,6 +382,41 @@ function MermaidBlock({ code, darkMode }: { code: string; darkMode: boolean }) {
     return () => window.removeEventListener("keydown", handleKey);
   }, [overlayOpen]);
 
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("contextmenu", close);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("contextmenu", close);
+    };
+  }, [contextMenu]);
+
+  // カスタムイベント経由でドキュメントリスナーから位置を受け取る（インライン表示）
+  useEffect(() => {
+    const el = viewRef.current;
+    if (!el) return;
+    const handler = (e: Event) => {
+      const { x, y } = (e as CustomEvent<{ x: number; y: number }>).detail;
+      setContextMenu({ x, y });
+    };
+    el.addEventListener("mermaid-contextmenu", handler);
+    return () => el.removeEventListener("mermaid-contextmenu", handler);
+  }, []);
+
+  // カスタムイベント経由でドキュメントリスナーから位置を受け取る（オーバーレイ表示）
+  useEffect(() => {
+    const el = overlayContentRef.current;
+    if (!el) return;
+    const handler = (e: Event) => {
+      const { x, y } = (e as CustomEvent<{ x: number; y: number }>).detail;
+      setContextMenu({ x, y });
+    };
+    el.addEventListener("mermaid-contextmenu", handler);
+    return () => el.removeEventListener("mermaid-contextmenu", handler);
+  }, [overlayOpen]);
+
   if (error) {
     return (
       <figure className="mermaid-error">
@@ -352,18 +430,56 @@ function MermaidBlock({ code, darkMode }: { code: string; darkMode: boolean }) {
   return (
     <>
       <div
+        ref={viewRef}
         className={["mermaid-view", svg ? "mermaid-view--clickable" : ""].join(" ")}
         dangerouslySetInnerHTML={{ __html: svg }}
         onClick={() => { if (svg) setOverlayOpen(true); }}
         title={svg ? "クリックして拡大表示" : undefined}
       />
+      {contextMenu ? (
+        <div
+          className="mermaid-context-menu"
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button type="button" onClick={() => { savePng(svg); setContextMenu(null); }}>
+            画像として保存 (PNG)
+          </button>
+          <button type="button" onClick={() => { saveSvg(svg); setContextMenu(null); }}>
+            SVG として保存
+          </button>
+        </div>
+      ) : null}
       {overlayOpen ? (
         <div className="mermaid-overlay" onClick={() => setOverlayOpen(false)}>
           <div
+            ref={overlayContentRef}
             className="mermaid-overlay-content"
             dangerouslySetInnerHTML={{ __html: stripSvgDimensions(svg) }}
             onClick={(e) => e.stopPropagation()}
           />
+        </div>
+      ) : null}
+      {overlayOpen ? (
+        <div className="mermaid-overlay-toolbar">
+          <button
+            type="button"
+            className="mermaid-overlay-action"
+            onClick={() => savePng(svg)}
+            title="PNG として保存"
+            aria-label="PNG として保存"
+          >
+            PNG
+          </button>
+          <button
+            type="button"
+            className="mermaid-overlay-action"
+            onClick={() => saveSvg(svg)}
+            title="SVG として保存"
+            aria-label="SVG として保存"
+          >
+            SVG
+          </button>
           <button
             type="button"
             className="mermaid-overlay-close"
@@ -521,6 +637,24 @@ export default function App() {
     [searchMatches],
   );
   const searchPlugin = useMemo(() => createSearchPlugin(query), [query]);
+
+  // Tauriのデフォルトコンテキストメニューより先にイベントを捕捉するためキャプチャフェーズで登録
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const mermaidEl = (e.target as Element)?.closest?.(".mermaid-view, .mermaid-overlay-content") as HTMLElement | null;
+      if (!mermaidEl) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      mermaidEl.dispatchEvent(
+        new CustomEvent("mermaid-contextmenu", {
+          detail: { x: e.clientX, y: e.clientY },
+          bubbles: false,
+        }),
+      );
+    };
+    document.addEventListener("contextmenu", handler, { capture: true });
+    return () => document.removeEventListener("contextmenu", handler, { capture: true });
+  }, []);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
