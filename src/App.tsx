@@ -310,7 +310,13 @@ function MermaidBlock({ code, darkMode }: { code: string; darkMode: boolean }) {
       .render(id, code)
       .then(({ svg }) => {
         if (cancelled) return;
-        setSvg(svg);
+        // SVG内部の<style>タグからbackgroundプロパティを除去して透明にする
+        const transparent = svg.replace(
+          /(<style[^>]*>)([\s\S]*?)(<\/style>)/,
+          (_, open, content, close) =>
+            `${open}${content.replace(/\bbackground\s*:[^;}{]+;?\s*/g, "")}${close}`,
+        );
+        setSvg(transparent);
         setError(null);
       })
       .catch((err: unknown) => {

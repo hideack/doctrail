@@ -639,9 +639,14 @@ input {
   padding: 18px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--panel-strong);
-  box-shadow: var(--shadow-soft), var(--shadow-inset);
+  background: #f6f8fa;
   transition: box-shadow 140ms ease, border-color 140ms ease;
+}
+
+@media (prefers-color-scheme: dark) {
+  .mermaid-view {
+    background: var(--surface);
+  }
 }
 
 .mermaid-view--clickable {
@@ -656,6 +661,7 @@ input {
 .mermaid-view svg {
   max-width: 100%;
   height: auto;
+  background: transparent !important;
 }
 
 .mermaid-overlay {
