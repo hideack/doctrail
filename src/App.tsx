@@ -281,9 +281,20 @@ function findSearchMatches(markdown: string, query: string, headings: FlatHeadin
   return matches;
 }
 
+function stripSvgDimensions(svg: string): string {
+  return svg.replace(/<svg([^>]*)>/, (_, attrs: string) => {
+    const cleaned = attrs.replace(/style="([^"]*)"/, (_, styleContent: string) => {
+      const newStyle = styleContent.replace(/max-width\s*:[^;]*;?\s*/g, "").trim();
+      return newStyle ? `style="${newStyle}"` : "";
+    });
+    return `<svg${cleaned}>`;
+  });
+}
+
 function MermaidBlock({ code, darkMode }: { code: string; darkMode: boolean }) {
   const [svg, setSvg] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [overlayOpen, setOverlayOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -313,6 +324,15 @@ function MermaidBlock({ code, darkMode }: { code: string; darkMode: boolean }) {
     };
   }, [code, darkMode]);
 
+  useEffect(() => {
+    if (!overlayOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOverlayOpen(false);
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [overlayOpen]);
+
   if (error) {
     return (
       <figure className="mermaid-error">
@@ -323,7 +343,33 @@ function MermaidBlock({ code, darkMode }: { code: string; darkMode: boolean }) {
     );
   }
 
-  return <div className="mermaid-view" dangerouslySetInnerHTML={{ __html: svg }} />;
+  return (
+    <>
+      <div
+        className={["mermaid-view", svg ? "mermaid-view--clickable" : ""].join(" ")}
+        dangerouslySetInnerHTML={{ __html: svg }}
+        onClick={() => { if (svg) setOverlayOpen(true); }}
+        title={svg ? "クリックして拡大表示" : undefined}
+      />
+      {overlayOpen ? (
+        <div className="mermaid-overlay" onClick={() => setOverlayOpen(false)}>
+          <div
+            className="mermaid-overlay-content"
+            dangerouslySetInnerHTML={{ __html: stripSvgDimensions(svg) }}
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            type="button"
+            className="mermaid-overlay-close"
+            onClick={() => setOverlayOpen(false)}
+            aria-label="閉じる"
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 function OutlineList({

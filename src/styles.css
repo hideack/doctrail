@@ -641,11 +641,90 @@ input {
   border-radius: 10px;
   background: var(--panel-strong);
   box-shadow: var(--shadow-soft), var(--shadow-inset);
+  transition: box-shadow 140ms ease, border-color 140ms ease;
+}
+
+.mermaid-view--clickable {
+  cursor: zoom-in;
+}
+
+.mermaid-view--clickable:hover {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-soft), var(--shadow-inset);
 }
 
 .mermaid-view svg {
   max-width: 100%;
   height: auto;
+}
+
+.mermaid-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.68);
+  backdrop-filter: blur(10px) saturate(0.8);
+  -webkit-backdrop-filter: blur(10px) saturate(0.8);
+  animation: mermaid-overlay-in 160ms ease;
+  cursor: zoom-out;
+}
+
+@keyframes mermaid-overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.mermaid-overlay-content {
+  width: min(90vw, 1280px);
+  max-height: 86vh;
+  overflow: auto;
+  padding: 36px 40px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel-strong);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.42), var(--shadow-inset);
+  cursor: default;
+  animation: mermaid-content-in 200ms cubic-bezier(0.34, 1.2, 0.64, 1);
+}
+
+@keyframes mermaid-content-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.mermaid-overlay-content svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.mermaid-overlay-close {
+  position: fixed;
+  top: 20px;
+  right: 24px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 50%;
+  background: rgba(60, 60, 70, 0.72);
+  color: #fff;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: background 120ms ease;
+}
+
+.mermaid-overlay-close:hover {
+  background: rgba(90, 90, 105, 0.88);
 }
 
 .mermaid-error {
